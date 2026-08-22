@@ -52,9 +52,9 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { name: "description", content: "Personal attendance tracker with daily pay calculation and Google Sheets sync." },
-      { property: "og:title", content: "Attendance Ledger - System Dashboard" },
-      { property: "og:description", content: "Track attendance, calculate daily earnings, print and sync to Google Sheets." },
+      { name: "description", content: "Brandex Law Associates - Employee Salary Management System." },
+      { property: "og:title", content: "NADEEM'S SALARY RECORD" },
+      { property: "og:description", content: "Brandex Law Associates - Employee Salary Management System." },
     ],
   }),
   component: Dashboard,
@@ -336,12 +336,13 @@ function Dashboard() {
         {/* Sidebar / Control Panel */}
         <aside className="w-full md:w-80 shrink-0 border-b md:border-b-0 md:border-r border-neutral-200 bg-neutral-50 p-6 flex flex-col justify-between gap-8">
           <div>
-            <div className="text-[10px] text-neutral-400 uppercase tracking-wider mb-2">[SYS_IDENTIFICATION]</div>
-            <h1 className="text-3xl font-light uppercase leading-[1.0] tracking-tighter mb-4 text-neutral-950">
-              LEDGER <span className="font-bold">SYSTEM</span>
-              <br />
-              V4.1
+            <div className="text-[10px] text-neutral-400 uppercase tracking-wider mb-1.5">[SYS_IDENTIFICATION]</div>
+            <h1 className="text-2xl font-black uppercase leading-[1.1] tracking-tight text-neutral-950">
+              BRANDEX <span className="font-light">LAW ASSOCIATES</span>
             </h1>
+            <p className="text-[9px] font-semibold text-neutral-500 uppercase tracking-wider mt-1 mb-3">
+              EMPLOYEE SALARY MANAGEMENT SYSTEM <span className="text-neutral-400 font-normal">v1.0.0</span>
+            </p>
             <p className="text-[10px] text-neutral-500 uppercase tracking-widest border-t border-neutral-200 pt-3 mt-3">
               DAILY RATE: {formatCurrency(settings.daily_rate)}
             </p>
