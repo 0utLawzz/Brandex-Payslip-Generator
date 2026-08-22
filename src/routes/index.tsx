@@ -448,7 +448,7 @@ function Dashboard() {
               {/* Minimalist Legend */}
               <div className="mt-6 flex flex-wrap items-center gap-4 text-[9px] uppercase tracking-wider text-neutral-500">
                 <LegendDot style={{ background: "oklch(0.42 0.09 175)" }} label="Present" />
-                <LegendDot className="border border-neutral-400 border-dashed bg-white" label="Absent" />
+                <LegendDot className="border border-rose-400 bg-rose-50 text-rose-700" label="Absent" />
                 <LegendDot className="bg-neutral-100" label="Sunday (Off)" />
                 <span className="ml-auto text-neutral-400 font-light">[TAP DAY CELL TO CONFIGURE]</span>
               </div>
@@ -598,15 +598,15 @@ function DayCell({
   const todayRingStyle = isToday && !sunday ? { ringColor: "oklch(0.55 0.09 175)", outline: "1.5px solid oklch(0.55 0.09 175)", outlineOffset: "2px" } : {};
 
   const cellClass = [
-    "relative flex aspect-square flex-col items-start justify-between p-2 text-xs border border-neutral-200 transition-all",
+    "relative flex aspect-square flex-col items-start justify-between p-2 text-xs border transition-all",
     "disabled:cursor-not-allowed",
     sunday
-      ? "bg-neutral-50 text-neutral-300 font-light"
+      ? "bg-neutral-50 border-neutral-200 text-neutral-300 font-light"
       : record?.status === "present"
-      ? "font-bold"
+      ? "border-emerald-800 font-bold"
       : record?.status === "absent"
-      ? "bg-white border-neutral-400 border-dashed border text-neutral-950 font-bold"
-      : "bg-white text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400",
+      ? "bg-rose-50/90 border-rose-400 text-rose-950 font-bold"
+      : "bg-white border-neutral-200 text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400",
     todayRingClass,
   ].join(" ");
 
@@ -671,8 +671,8 @@ function DayCell({
             <button
               onClick={() => pickStatus("absent")}
               className={
-                "border border-neutral-300 py-1 text-[9px] font-bold uppercase " +
-                (record?.status === "absent" ? "bg-neutral-950 text-white border-neutral-950" : "bg-white hover:bg-neutral-50")
+                "border py-1 text-[9px] font-bold uppercase transition-colors " +
+                (record?.status === "absent" ? "bg-rose-600 text-white border-rose-600" : "bg-white hover:bg-neutral-50 border-neutral-300 text-rose-950")
               }
             >
               ABSENT
