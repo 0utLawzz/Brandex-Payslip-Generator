@@ -13,7 +13,9 @@ import {
   isSunday,
   monthRange,
   ymd,
+  type AttendanceRecord,
 } from "@/lib/attendance";
+
 
 type Search = { month?: string };
 
