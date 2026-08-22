@@ -51,8 +51,20 @@ async function getAccessToken(): Promise<string> {
     );
   }
 
+  // Clean up private key if user passed entire JSON or extra quotes
+  let cleanedKey = rawKey.trim();
+  if (cleanedKey.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(cleanedKey);
+      if (parsed.private_key) cleanedKey = parsed.private_key;
+    } catch (_) {}
+  }
+  if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) || (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
+    cleanedKey = cleanedKey.slice(1, -1);
+  }
+
   // Cloud platforms (Vercel) store the key with literal \n in the env string.
-  const pemKey = rawKey.replace(/\\n/g, "\n");
+  const pemKey = cleanedKey.replace(/\\n/g, "\n");
 
   const now = Math.floor(Date.now() / 1000);
   const header = encodeB64Json({ alg: "RS256", typ: "JWT" });
@@ -66,12 +78,14 @@ async function getAccessToken(): Promise<string> {
 
   const signingInput = `${header}.${claim}`;
 
-  // Import PEM private key
+  // Strip PEM headers/footers and keep only base64 chars
   const pemBody = pemKey
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, "");
-  const derBytes = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0));
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/[^A-Za-z0-9+/=]/g, "");
+
+  // Use Buffer for base64 decoding (reliable on Node/Vercel serverless)
+  const derBytes = Uint8Array.from(Buffer.from(pemBody, "base64"));
 
   const cryptoKey = await crypto.subtle.importKey(
     "pkcs8",
