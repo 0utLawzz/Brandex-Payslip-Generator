@@ -1,8 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Printer, Settings as SettingsIcon, ArrowUpFromLine, ArrowDownToLine, Check, X, Wallet } from "lucide-react";
-import { toast } from "sonner";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Printer,
+  Settings as SettingsIcon,
+  ArrowUpFromLine,
+  ArrowDownToLine,
+  Check,
+  X,
+  Wallet,
+} from "lucide-react";
+import { toast, Toaster } from "sonner";
 
 import {
   deleteAttendanceDay,
@@ -11,10 +21,18 @@ import {
   getSettings,
   updateSettings,
   upsertAttendanceDay,
+  bulkUpsertAttendanceFromSheet,
 } from "@/lib/attendance.functions";
-import { syncToGoogleSheets } from "@/lib/sync.functions";
+import { pushMonthToSheet, pullMonthFromSheet } from "@/lib/sync.functions";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,8 +45,9 @@ import {
   isSunday,
   monthRange,
   ymd,
+  type AttendanceRecord,
+  type AttendanceStatus,
 } from "@/lib/attendance";
-import { pushMonthToSheet, pullMonthFromSheet } from "@/lib/sync.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -51,19 +70,28 @@ function Dashboard() {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [records, setRecords] = useState<Record<string, AttendanceRecord>>({});
-  const [settings, setSettings] = useState<Settings>({ spreadsheet_id: null, sheet_name: "Attendance", daily_rate: DAILY_RATE_DEFAULT });
+  const [settings, setSettings] = useState<Settings>({
+    spreadsheet_id: null,
+    sheet_name: "Attendance",
+    daily_rate: DAILY_RATE_DEFAULT,
+  });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-
   const [pulling, setPulling] = useState(false);
 
+  const fetchRange = useServerFn(getAttendanceRange);
+  const fetchSettings = useServerFn(getSettings);
+  const sync = useServerFn(getAllAttendance);
+  const removeAttendanceDay = useServerFn(deleteAttendanceDay);
+  const saveAttendanceDay = useServerFn(upsertAttendanceDay);
   const pushSheet = useServerFn(pushMonthToSheet);
   const pullSheet = useServerFn(pullMonthFromSheet);
+  const applySheet = useServerFn(bulkUpsertAttendanceFromSheet);
 
   const { start, end, days } = useMemo(
     () => monthRange(cursor.getFullYear(), cursor.getMonth()),
-    [cursor],
+    [cursor]
   );
 
   const loadRecords = async (silent = false) => {
@@ -91,8 +119,12 @@ function Dashboard() {
     });
   };
 
-  useEffect(() => { loadSettings(); }, []);
-  useEffect(() => { loadRecords(); }, [start, end]);
+  useEffect(() => {
+    loadSettings();
+  }, []);
+  useEffect(() => {
+    loadRecords();
+  }, [start, end]);
 
   const handleSync = async (silent = false) => {
     if (!settings.spreadsheet_id) {
@@ -104,15 +136,10 @@ function Dashboard() {
     }
     setSyncing(true);
     try {
-      const res = await sync({
-        data: {
-          spreadsheetId: settings.spreadsheet_id,
-          sheetName: settings.sheet_name ?? "Attendance",
-        }
-      });
+      await sync();
       await loadRecords(true);
       if (!silent) {
-        toast.success(`Sync complete! Local DB updated: ${res.dbUpdates}, Sheets updated: ${res.sheetUpdates}`);
+        toast.success("Sync complete!");
       }
     } catch (e: any) {
       if (!silent) {
@@ -126,8 +153,7 @@ function Dashboard() {
   // Background Auto-Sync Trigger
   useEffect(() => {
     if (!settings.spreadsheet_id) return;
-    
-    // Sync initially once settings load
+
     handleSync(true);
 
     const interval = setInterval(() => {
@@ -144,18 +170,23 @@ function Dashboard() {
       try {
         await removeAttendanceDay({ data: { date: key } });
       } catch (e: any) {
-        toast.error(e?.message ?? "Failed to clear day"); return;
+        toast.error(e?.message ?? "Failed to clear day");
+        return;
       }
-      const next = { ...records }; delete next[key]; setRecords(next);
-      handleSync(true); // silent background sync trigger
+      const next = { ...records };
+      delete next[key];
+      setRecords(next);
+      handleSync(true);
       return;
     }
     const effectiveStatus: AttendanceStatus = status ?? "absent";
     const amount = effectiveStatus === "present" ? settings.daily_rate : 0;
     try {
-      const data = await saveAttendanceDay({ data: { date: key, status: effectiveStatus, amount, advance } });
+      const data = await saveAttendanceDay({
+        data: { date: key, status: effectiveStatus, amount, advance },
+      });
       setRecords({ ...records, [key]: data as AttendanceRecord });
-      handleSync(true); // silent background sync trigger
+      handleSync(true);
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to save day");
     }
@@ -163,19 +194,29 @@ function Dashboard() {
 
   // Stats
   const stats = useMemo(() => {
-    let workingDays = 0, present = 0, absent = 0, earnings = 0, advances = 0;
+    let workingDays = 0,
+      present = 0,
+      absent = 0,
+      earnings = 0,
+      advances = 0;
     days.forEach((d) => {
       if (isSunday(d)) return;
       workingDays++;
       const r = records[ymd(d)];
-      if (r?.status === "present") { present++; earnings += r.amount; }
-      else if (r?.status === "absent") absent++;
+      if (r?.status === "present") {
+        present++;
+        earnings += r.amount;
+      } else if (r?.status === "absent") absent++;
       if (r?.advance) advances += r.advance;
     });
     return {
-      workingDays, present, absent,
+      workingDays,
+      present,
+      absent,
       unmarked: workingDays - present - absent,
-      earnings, advances, net: earnings - advances,
+      earnings,
+      advances,
+      net: earnings - advances,
     };
   }, [days, records]);
 
@@ -197,9 +238,7 @@ function Dashboard() {
     if (!requireSheet()) return;
     setSyncing(true);
     try {
-      const rows: Array<Array<string | number>> = [
-        ["Date", "Day", "Status", "Amount (Rs)", "Advance (Rs)", "Net (Rs)"],
-      ];
+      const rows: Array<Array<string | number>> = [["Date", "Day", "Status", "Amount (Rs)", "Advance (Rs)", "Net (Rs)"]];
       days.forEach((d) => {
         if (isSunday(d)) return;
         const key = ymd(d);
@@ -229,7 +268,7 @@ function Dashboard() {
         toast.error(`No tab "${tabName}" in the spreadsheet yet. Push first.`);
         return;
       }
-      const upserts: Array<{ date: string; status: string; amount: number; advance: number }> = [];
+      const upserts: Array<{ date: string; status: "present" | "absent"; amount: number; advance: number }> = [];
       const deletions: string[] = [];
       for (const row of res.rows) {
         const date = (row[0] ?? "").trim();
@@ -238,7 +277,10 @@ function Dashboard() {
         const status = (row[2] ?? "").trim().toLowerCase();
         const advance = Math.max(0, Math.round(Number(row[4]) || 0));
         if (status !== "present" && status !== "absent") {
-          if (advance === 0) { deletions.push(date); continue; }
+          if (advance === 0) {
+            deletions.push(date);
+            continue;
+          }
         }
         const effective = status === "present" ? "present" : "absent";
         upserts.push({
@@ -248,15 +290,7 @@ function Dashboard() {
           advance,
         });
       }
-      if (deletions.length) {
-        await supabase.from("attendance_records").delete().in("date", deletions);
-      }
-      if (upserts.length) {
-        const { error } = await supabase
-          .from("attendance_records")
-          .upsert(upserts, { onConflict: "date" });
-        if (error) throw error;
-      }
+      await applySheet({ data: { start, end, rows: upserts, deletions } });
       await loadRecords();
       toast.success(`Pulled ${upserts.length} day(s) from "${tabName}".`);
     } catch (e: any) {
@@ -281,10 +315,9 @@ function Dashboard() {
   return (
     <div className="min-h-screen bg-[#fcfcfc] p-4 md:p-8 font-mono text-neutral-900 selection:bg-neutral-950 selection:text-white">
       <Toaster richColors position="top-center" />
-      
+
       {/* Outer technical wrapper */}
       <div className="mx-auto max-w-6xl border border-neutral-300 bg-white shadow-sm flex flex-col md:flex-row overflow-hidden relative">
-        
         {/* Architectural layout details */}
         <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-neutral-400"></div>
         <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-neutral-400"></div>
@@ -296,7 +329,9 @@ function Dashboard() {
           <div>
             <div className="text-[10px] text-neutral-400 uppercase tracking-wider mb-2">[SYS_IDENTIFICATION]</div>
             <h1 className="text-3xl font-light uppercase leading-[1.0] tracking-tighter mb-4 text-neutral-950">
-              LEDGER <span className="font-bold">SYSTEM</span><br />V4.1
+              LEDGER <span className="font-bold">SYSTEM</span>
+              <br />
+              V4.1
             </h1>
             <p className="text-[10px] text-neutral-500 uppercase tracking-widest border-t border-neutral-200 pt-3 mt-3">
               DAILY RATE: {formatCurrency(settings.daily_rate)}
@@ -313,9 +348,7 @@ function Dashboard() {
                   {pulling ? "…" : "Pull"}
                 </BrutalButton>
               </div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-black/60 -mt-1">
-                Tab: {tabName}
-              </p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-black/60 -mt-1">Tab: {tabName}</p>
               <Link to="/print" search={{ month: monthParam }} className="block">
                 <WireframeButton>
                   <Printer className="h-3.5 w-3.5" />
@@ -334,17 +367,28 @@ function Dashboard() {
             </div>
           </div>
 
-          <div className="text-white p-5 border border-neutral-800" style={{background: "oklch(0.14 0.04 175)"}}>
+          <div className="text-white p-5 border border-neutral-800" style={{ background: "oklch(0.14 0.04 175)" }}>
             <p className="text-[9px] uppercase opacity-50 tracking-wider font-semibold">[CURRENT_PERIOD]</p>
             <p className="text-xl tracking-tight uppercase font-medium mt-1">{monthLabel}</p>
             <div className="mt-4 flex gap-1.5">
-              <button onClick={goPrev} className="flex-1 border border-neutral-700 py-1 text-xs font-bold hover:bg-neutral-700 transition-colors" aria-label="Previous month">
+              <button
+                onClick={goPrev}
+                className="flex-1 border border-neutral-700 py-1 text-xs font-bold hover:bg-neutral-700 transition-colors"
+                aria-label="Previous month"
+              >
                 <ChevronLeft className="h-4 w-4 mx-auto" />
               </button>
-              <button onClick={goToday} className="flex-1 border border-neutral-700 py-1 text-[9px] font-bold uppercase hover:bg-neutral-700 transition-colors">
+              <button
+                onClick={goToday}
+                className="flex-1 border border-neutral-700 py-1 text-[9px] font-bold uppercase hover:bg-neutral-700 transition-colors"
+              >
                 TODAY
               </button>
-              <button onClick={goNext} className="flex-1 border border-neutral-700 py-1 text-xs font-bold hover:bg-neutral-700 transition-colors" aria-label="Next month">
+              <button
+                onClick={goNext}
+                className="flex-1 border border-neutral-700 py-1 text-xs font-bold hover:bg-neutral-700 transition-colors"
+                aria-label="Next month"
+              >
                 <ChevronRight className="h-4 w-4 mx-auto" />
               </button>
             </div>
@@ -353,7 +397,6 @@ function Dashboard() {
 
         {/* Main Dashboard Panel */}
         <main className="flex-1 flex flex-col min-w-0">
-          
           {/* Monochromatic Stats Strip */}
           <div className="grid grid-cols-2 lg:grid-cols-4 border-b border-neutral-200">
             <StatBlock label="WORKING_DAYS" value={stats.workingDays} />
@@ -364,14 +407,16 @@ function Dashboard() {
 
           {/* Calendar Grid + Finance Ledger */}
           <div className="flex flex-col lg:flex-row flex-1 min-w-0">
-            
             {/* Grid display */}
             <div className="flex-1 p-6 min-w-0">
               <div className="grid grid-cols-7 gap-1">
                 {DAY_NAMES.map((d, i) => (
                   <div
                     key={d}
-                    className={"text-center font-bold uppercase text-[9px] tracking-wider pb-2 border-b border-neutral-100 " + (i === 0 ? "text-neutral-400 font-normal" : "text-neutral-900")}
+                    className={
+                      "text-center font-bold uppercase text-[9px] tracking-wider pb-2 border-b border-neutral-100 " +
+                      (i === 0 ? "text-neutral-400 font-normal" : "text-neutral-900")
+                    }
                   >
                     {d}
                   </div>
@@ -393,7 +438,7 @@ function Dashboard() {
 
               {/* Minimalist Legend */}
               <div className="mt-6 flex flex-wrap items-center gap-4 text-[9px] uppercase tracking-wider text-neutral-500">
-                <LegendDot style={{background: "oklch(0.42 0.09 175)"}} label="Present" />
+                <LegendDot style={{ background: "oklch(0.42 0.09 175)" }} label="Present" />
                 <LegendDot className="border border-neutral-400 border-dashed bg-white" label="Absent" />
                 <LegendDot className="bg-neutral-100" label="Sunday (Off)" />
                 <span className="ml-auto text-neutral-400 font-light">[TAP DAY CELL TO CONFIGURE]</span>
@@ -429,10 +474,10 @@ function Dashboard() {
               </div>
               <div className="pt-5 border-t border-neutral-200">
                 <p className="text-[9px] uppercase text-neutral-400 tracking-widest">[NET_SALARY]</p>
-                <p className="text-2xl font-bold mt-1 leading-[0.95] tabular-nums" style={{color: "oklch(0.40 0.09 175)"}}>
+                <p className="text-2xl font-bold mt-1 leading-[0.95] tabular-nums" style={{ color: "oklch(0.40 0.09 175)" }}>
                   {formatCurrency(stats.net)}
                 </p>
-                <p className="mt-3 text-[9px] uppercase tracking-wider" style={{color: stats.unmarked > 0 ? "oklch(0.55 0.09 175)" : "oklch(0.55 0.09 175)"}}>
+                <p className="mt-3 text-[9px] uppercase tracking-wider" style={{ color: stats.unmarked > 0 ? "oklch(0.55 0.09 175)" : "oklch(0.55 0.09 175)" }}>
                   {stats.unmarked > 0 ? `${stats.unmarked} UNMARKED` : "ALL RECORDS SYNCED"}
                 </p>
               </div>
@@ -441,6 +486,26 @@ function Dashboard() {
         </main>
       </div>
     </div>
+  );
+}
+
+function BrutalButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center justify-center gap-2 border border-black bg-black px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white transition-all hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -474,9 +539,7 @@ function StatBlock({
   return (
     <div className="p-5 border-r border-neutral-200 last:border-r-0 bg-white">
       <div className="text-[9px] font-semibold uppercase tracking-wider text-neutral-400">{`[${label}]`}</div>
-      <div className="text-xl font-bold mt-1.5 tabular-nums text-neutral-900">
-        {value}
-      </div>
+      <div className="text-xl font-bold mt-1.5 tabular-nums text-neutral-900">{value}</div>
     </div>
   );
 }
@@ -491,7 +554,11 @@ function LegendDot({ className, style, label }: { className?: string; style?: Re
 }
 
 function DayCell({
-  date, record, isToday, disabled, onSave,
+  date,
+  record,
+  isToday,
+  disabled,
+  onSave,
 }: {
   date: Date;
   record?: AttendanceRecord;
@@ -503,7 +570,9 @@ function DayCell({
   const [open, setOpen] = useState(false);
   const [advance, setAdvance] = useState<number>(record?.advance ?? 0);
 
-  useEffect(() => { setAdvance(record?.advance ?? 0); }, [record?.advance]);
+  useEffect(() => {
+    setAdvance(record?.advance ?? 0);
+  }, [record?.advance]);
 
   const pickStatus = async (status: AttendanceStatus | null) => {
     await onSave(date, status, advance);
@@ -515,7 +584,6 @@ function DayCell({
     setOpen(false);
   };
 
-  // Calm teal for present days; soft teal ring for today
   const presentStyle = record?.status === "present" ? { background: "oklch(0.42 0.09 175)", color: "white" } : {};
   const todayRingClass = isToday && !sunday ? "ring-1 ring-offset-1" : "";
   const todayRingStyle = isToday && !sunday ? { ringColor: "oklch(0.55 0.09 175)", outline: "1.5px solid oklch(0.55 0.09 175)", outlineOffset: "2px" } : {};
@@ -540,8 +608,7 @@ function DayCell({
         className={cellClass + " overflow-hidden"}
         title="Sunday (off)"
         style={{
-          backgroundImage:
-            "repeating-linear-gradient(45deg, transparent 0 5px, rgba(0,0,0,0.03) 5px 6px)",
+          backgroundImage: "repeating-linear-gradient(45deg, transparent 0 5px, rgba(0,0,0,0.03) 5px 6px)",
         }}
       >
         <span className="text-[10px]">{date.getDate()}</span>
@@ -553,17 +620,23 @@ function DayCell({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button disabled={disabled} className={cellClass} style={{...presentStyle, ...todayRingStyle}}>
+        <button disabled={disabled} className={cellClass} style={{ ...presentStyle, ...todayRingStyle }}>
           <span className="text-[11px] leading-none">{date.getDate()}</span>
           <div className="flex w-full items-end justify-between">
             <span className="text-[7px] uppercase tracking-wider opacity-65">
               {record?.status === "present" ? "PR" : record?.status === "absent" ? "AB" : ""}
             </span>
-            {record?.status === "present" ? <Check className="h-2.5 w-2.5" strokeWidth={3} /> :
-              record?.status === "absent" ? <X className="h-2.5 w-2.5" strokeWidth={3} /> : null}
+            {record?.status === "present" ? (
+              <Check className="h-2.5 w-2.5" strokeWidth={3} />
+            ) : record?.status === "absent" ? (
+              <X className="h-2.5 w-2.5" strokeWidth={3} />
+            ) : null}
           </div>
           {record?.advance ? (
-            <span className="absolute -top-1 -right-1 flex items-center gap-0.5 border px-1 text-[8px] font-bold shadow-sm" style={{borderColor: "oklch(0.55 0.09 175)", background: "oklch(0.93 0.025 175)", color: "oklch(0.35 0.09 175)"}}>
+            <span
+              className="absolute -top-1 -right-1 flex items-center gap-0.5 border px-1 text-[8px] font-bold shadow-sm"
+              style={{ borderColor: "oklch(0.55 0.09 175)", background: "oklch(0.93 0.025 175)", color: "oklch(0.35 0.09 175)" }}
+            >
               <Wallet className="h-2 w-2" strokeWidth={2.5} />
               {record.advance}
             </span>
@@ -578,14 +651,20 @@ function DayCell({
           <div className="grid grid-cols-3 gap-1">
             <button
               onClick={() => pickStatus("present")}
-              className={"border py-1 text-[9px] font-bold uppercase transition-colors " + (record?.status === "present" ? "text-white" : "bg-white hover:bg-neutral-50 border-neutral-300")}
-              style={record?.status === "present" ? {background: "oklch(0.42 0.09 175)", borderColor: "oklch(0.42 0.09 175)"} : {}}
+              className={
+                "border py-1 text-[9px] font-bold uppercase transition-colors " +
+                (record?.status === "present" ? "text-white" : "bg-white hover:bg-neutral-50 border-neutral-300")
+              }
+              style={record?.status === "present" ? { background: "oklch(0.42 0.09 175)", borderColor: "oklch(0.42 0.09 175)" } : {}}
             >
               PRESENT
             </button>
             <button
               onClick={() => pickStatus("absent")}
-              className={"border border-neutral-300 py-1 text-[9px] font-bold uppercase " + (record?.status === "absent" ? "bg-neutral-950 text-white border-neutral-950" : "bg-white hover:bg-neutral-50")}
+              className={
+                "border border-neutral-300 py-1 text-[9px] font-bold uppercase " +
+                (record?.status === "absent" ? "bg-neutral-950 text-white border-neutral-950" : "bg-white hover:bg-neutral-50")
+              }
             >
               ABSENT
             </button>
@@ -597,7 +676,9 @@ function DayCell({
             </button>
           </div>
           <div className="space-y-1">
-            <Label htmlFor={"adv-" + ymd(date)} className="text-[8px] font-bold uppercase tracking-widest text-neutral-400">ADVANCE (RS)</Label>
+            <Label htmlFor={"adv-" + ymd(date)} className="text-[8px] font-bold uppercase tracking-widest text-neutral-400">
+              ADVANCE (RS)
+            </Label>
             <div className="flex gap-1">
               <Input
                 id={"adv-" + ymd(date)}
@@ -606,7 +687,9 @@ function DayCell({
                 value={advance}
                 className="border border-neutral-300 rounded-none focus-visible:ring-0 focus-visible:border-neutral-400 h-7 text-xs font-mono"
                 onChange={(e) => setAdvance(Math.max(0, Number(e.target.value) || 0))}
-                onKeyDown={(e) => { if (e.key === "Enter") saveAdvanceOnly(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveAdvanceOnly();
+                }}
               />
               <button
                 onClick={saveAdvanceOnly}
@@ -622,7 +705,13 @@ function DayCell({
   );
 }
 
-function SettingsDialog({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
+function SettingsDialog({
+  settings,
+  onSaved,
+}: {
+  settings: Settings;
+  onSaved: (s: Settings) => void;
+}) {
   const [spreadsheetId, setSpreadsheetId] = useState(settings.spreadsheet_id ?? "");
   const [sheetName, setSheetName] = useState(settings.sheet_name ?? "Attendance");
   const [dailyRate, setDailyRate] = useState<number>(settings.daily_rate ?? DAILY_RATE_DEFAULT);
@@ -651,29 +740,49 @@ function SettingsDialog({ settings, onSaved }: { settings: Settings; onSaved: (s
       </DialogHeader>
       <div className="space-y-3.5 my-2">
         <div className="space-y-1">
-          <Label htmlFor="ss" className="text-[9px] uppercase tracking-wider">SPREADSHEET ID</Label>
-          <Input id="ss" value={spreadsheetId} onChange={(e) => setSpreadsheetId(e.target.value)}
+          <Label htmlFor="ss" className="text-[9px] uppercase tracking-wider">
+            SPREADSHEET ID
+          </Label>
+          <Input
+            id="ss"
+            value={spreadsheetId}
+            onChange={(e) => setSpreadsheetId(e.target.value)}
             className="border border-neutral-300 rounded-none text-xs focus-visible:ring-0 focus-visible:border-neutral-400 h-8"
-            placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUU..." />
-          <p className="text-[8px] text-neutral-400">
-            GOOGLE_SPREADSHEET_ID (FROM URL PATH)
-          </p>
+            placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUU..."
+          />
+          <p className="text-[8px] text-neutral-400">GOOGLE_SPREADSHEET_ID (FROM URL PATH)</p>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="sn" className="text-[9px] uppercase tracking-wider">SHEET NAME (TAB)</Label>
-          <Input id="sn" value={sheetName} onChange={(e) => setSheetName(e.target.value)}
+          <Label htmlFor="sn" className="text-[9px] uppercase tracking-wider">
+            SHEET NAME (TAB)
+          </Label>
+          <Input
+            id="sn"
+            value={sheetName}
+            onChange={(e) => setSheetName(e.target.value)}
             className="border border-neutral-300 rounded-none text-xs focus-visible:ring-0 focus-visible:border-neutral-400 h-8"
-            placeholder="Attendance" />
+            placeholder="Attendance"
+          />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="rate" className="text-[9px] uppercase tracking-wider">DAILY RATE (RS)</Label>
-          <Input id="rate" type="number" value={dailyRate}
+          <Label htmlFor="rate" className="text-[9px] uppercase tracking-wider">
+            DAILY RATE (RS)
+          </Label>
+          <Input
+            id="rate"
+            type="number"
+            value={dailyRate}
             className="border border-neutral-300 rounded-none text-xs focus-visible:ring-0 focus-visible:border-neutral-400 h-8"
-            onChange={(e) => setDailyRate(Number(e.target.value) || 0)} />
+            onChange={(e) => setDailyRate(Number(e.target.value) || 0)}
+          />
         </div>
       </div>
       <DialogFooter className="sm:justify-start">
-        <Button onClick={save} disabled={saving} className="bg-neutral-950 text-white rounded-none hover:bg-neutral-800 text-xs font-mono py-1.5 h-8">
+        <Button
+          onClick={save}
+          disabled={saving}
+          className="bg-neutral-950 text-white rounded-none hover:bg-neutral-800 text-xs font-mono py-1.5 h-8"
+        >
           {saving ? "SAVING..." : "COMMIT CHANGES"}
         </Button>
       </DialogFooter>
