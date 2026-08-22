@@ -14,7 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_settings: {
+        Row: {
+          daily_rate: number
+          id: number
+          sheet_name: string | null
+          spreadsheet_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          daily_rate?: number
+          id?: number
+          sheet_name?: string | null
+          spreadsheet_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          daily_rate?: number
+          id?: number
+          sheet_name?: string | null
+          spreadsheet_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      attendance_records: {
+        Row: {
+          advance: number
+          amount: number
+          created_at: string
+          date: string
+          id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          advance?: number
+          amount?: number
+          created_at?: string
+          date: string
+          id?: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          advance?: number
+          amount?: number
+          created_at?: string
+          date?: string
+          id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
