@@ -33,3 +33,8 @@ dist-ssr
 .vercel
 .env*
 !.env.example
+
+# Google Service Account key files — never commit these
+*-key.json
+*service-account*.json
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.json

@@ -33,7 +33,7 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
   .validator(z.object({ start: z.string(), end: z.string() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const rows = await db(
+    const rows = await db.query(
       "SELECT id, date, status, amount, advance, updated_at FROM attendance_records WHERE date >= $1 AND date <= $2 ORDER BY date ASC",
       [data.start, data.end]
     );
@@ -45,7 +45,7 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
 // ---------------------------------------------------------------------
 export const getAllAttendance = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
-  const rows = await db(
+  const rows = await db.query(
     "SELECT id, date, status, amount, advance, updated_at FROM attendance_records ORDER BY date ASC"
   );
   return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
@@ -65,7 +65,7 @@ export const upsertAttendanceDay = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    const rows = await db(
+    const rows = await db.query(
       `INSERT INTO attendance_records (date, status, amount, advance)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (date) DO UPDATE SET
@@ -87,7 +87,7 @@ export const deleteAttendanceDay = createServerFn({ method: "POST" })
   .validator(z.object({ date: z.string() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    await db("DELETE FROM attendance_records WHERE date = $1", [data.date]);
+    await db.query("DELETE FROM attendance_records WHERE date = $1", [data.date]);
     return { ok: true };
   });
 
@@ -103,7 +103,7 @@ export type SettingsRow = z.infer<typeof SettingsSchema>;
 
 export const getSettings = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
-  const rows = await db(
+  const rows = await db.query(
     "SELECT spreadsheet_id, sheet_name, daily_rate FROM app_settings WHERE id = 1 LIMIT 1"
   );
   if (!rows || rows.length === 0) {
@@ -127,7 +127,7 @@ export const updateSettings = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    await db(
+    await db.query(
       `INSERT INTO app_settings (id, spreadsheet_id, sheet_name, daily_rate)
        VALUES (1, $1, $2, $3)
        ON CONFLICT (id) DO UPDATE SET
@@ -162,25 +162,27 @@ export const bulkUpsertAttendanceFromSheet = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = getDb();
     if (data.deletions.length > 0) {
-      await db(
+      await db.query(
         `DELETE FROM attendance_records WHERE date >= $1 AND date <= $2 AND date = ANY($3::date[])`,
         [data.start, data.end, data.deletions]
       );
     }
-    
+
     if (data.rows.length > 0) {
-      await Promise.all(data.rows.map(r => 
-        db(
-          `INSERT INTO attendance_records (date, status, amount, advance)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (date) DO UPDATE SET
-             status = EXCLUDED.status,
-             amount = EXCLUDED.amount,
-             advance = EXCLUDED.advance,
-             updated_at = now()`,
-          [r.date, r.status, r.amount, r.advance]
+      await Promise.all(
+        data.rows.map((r) =>
+          db.query(
+            `INSERT INTO attendance_records (date, status, amount, advance)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (date) DO UPDATE SET
+               status = EXCLUDED.status,
+               amount = EXCLUDED.amount,
+               advance = EXCLUDED.advance,
+               updated_at = now()`,
+            [r.date, r.status, r.amount, r.advance]
+          )
         )
-      ));
+      );
     }
     return { upserted: data.rows.length, deleted: data.deletions.length };
   });
