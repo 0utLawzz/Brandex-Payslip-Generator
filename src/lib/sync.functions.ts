@@ -65,13 +65,14 @@ function sanitize(rows: Array<Array<string | number>>) {
 
 /** Push (app -> sheet) one month into its own tab. */
 export const pushMonthToSheet = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     z.object({
       spreadsheetId: spreadsheetIdSchema,
       tabName: sheetTitleSchema,
       rows: z.array(z.array(z.union([z.string(), z.number()]))),
     }),
   )
+
   .handler(async ({ data }) => {
     const { spreadsheetId, tabName, rows } = data;
     await ensureTab(spreadsheetId, tabName);
