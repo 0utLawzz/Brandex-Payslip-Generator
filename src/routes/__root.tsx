@@ -10,7 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
+
 
 function NotFoundComponent() {
   return (
@@ -38,7 +38,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
+    console.error("[Root Error Boundary]", error);
   }, [error]);
 
   return (
@@ -77,18 +77,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Daily Attendance Hub is a web application for marking daily attendance, managing advances, and syncing records." },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Daily Attendance Hub is a web application for marking daily attendance, managing advances, and syncing records." },
+      { title: "Brandex Payslip — Attendance & Salary Ledger" },
+      { name: "description", content: "Personal attendance & salary ledger for Brandex Law Services. Mark daily presence, track advances, calculate net pay, and sync to Google Sheets." },
+      { name: "author", content: "Nadeem (OutLawZ)" },
+      { property: "og:title", content: "Brandex Payslip — Attendance & Salary Ledger" },
+      { property: "og:description", content: "Mark daily attendance, calculate earnings, manage advances, print monthly reports, and sync to Google Sheets." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
-      { name: "twitter:description", content: "Daily Attendance Hub is a web application for marking daily attendance, managing advances, and syncing records." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b0bfe21b-3151-4b28-bade-b953097fb238/id-preview-d98470c0--a0dd835f-6925-489f-a85b-56f4c0d5f9db.lovable.app-1781436940305.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b0bfe21b-3151-4b28-bade-b953097fb238/id-preview-d98470c0--a0dd835f-6925-489f-a85b-56f4c0d5f9db.lovable.app-1781436940305.png" },
+      { name: "twitter:title", content: "Brandex Payslip — Attendance & Salary Ledger" },
+      { name: "twitter:description", content: "Mark daily attendance, calculate earnings, manage advances, print monthly reports, and sync to Google Sheets." },
     ],
     links: [
       {

@@ -1,4 +1,4 @@
-# Salary Report Generator (Brandex Attendance)
+# Brandex Payslip — Salary Report Generator
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)
@@ -7,16 +7,15 @@
 ![Neon](https://img.shields.io/badge/Neon-Postgres-00E599?logo=postgresql&logoColor=black)
 ![Google Sheets](https://img.shields.io/badge/Google%20Sheets-Sync-0F9D58?logo=googlesheets&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel&logoColor=white)
-![Automation](https://img.shields.io/badge/Automation-Custom-blue)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 
-> **Personal attendance & salary ledger** for Brandex Law Services — mark present/absent by day, track advances, calculate net pay in PKR, print monthly reports, and sync to Google Sheets.
+> **Personal attendance & salary ledger** for Brandex Law Services — mark present/absent by day, track advances, calculate net pay in PKR, print monthly reports, and sync to Google Sheets via direct API.
 
 **Default daily rate:** Rs 1,600 (configurable in Settings).
 
 ## Topics / Keywords
 
-`salary` `payroll` `attendance` `report-generator` `daily-wage` `advance` `google-sheets` `supabase` `tanstack-start` `typescript` `react` `hr` `pakistan` `pkr` `brandex` `neo-brutalist` `automation` `custom-automation`
+`salary` `payroll` `attendance` `report-generator` `daily-wage` `advance` `google-sheets` `neon-postgres` `tanstack-start` `typescript` `react` `hr` `pakistan` `pkr` `brandex` `neo-brutalist` `automation`
 
 ---
 
@@ -32,7 +31,7 @@ A single-user **attendance dashboard** that turns daily presence into a salary r
 | **Advances** | Per-day advance amount; deducted from earnings for **net salary** |
 | **Summary cards** | Working days, Present, Absent, Earnings, Advance, Net |
 | **Print report** | Clean printable table with signatures (`/print?month=YYYY-MM`) |
-| **Google Sheets sync** | Push all records to your spreadsheet via server function |
+| **Google Sheets sync** | Push/pull records to/from your spreadsheet via Service Account |
 | **Settings** | Spreadsheet ID, sheet tab name, daily rate |
 
 Branded UI: **neo-brutalist** design (thick black borders, bold type, high-contrast colors) under **Brandex Law Services**.
@@ -59,20 +58,20 @@ Currency formatting uses `en-PK` → e.g. `Rs 1,600`.
 | Framework | **TanStack Start** (React 19 + Vite) |
 | Routing | TanStack Router (file routes) |
 | Database | **Neon** (serverless Postgres), accessed via `@neondatabase/serverless` |
-| Data access | TanStack `createServerFn` — all DB reads/writes run server-side only, the browser never talks to Postgres directly |
-| Sheets sync | Lovable Google Sheets connector gateway |
+| Data access | TanStack `createServerFn` — all DB reads/writes run server-side only |
+| Sheets sync | Direct **Google Sheets API v4** via Service Account JWT (no intermediary) |
 | UI | shadcn/ui + Tailwind CSS 4 + Lucide icons |
 | Forms / validation | Zod |
 | Toasts | Sonner |
 | Deployment | Vercel (Nitro `vercel` preset) |
-| Package manager | npm (`package-lock.json`) — Bun also works |
+| Package manager | npm (`package-lock.json`) |
 
 ---
 
 ## Project structure
 
 ```
-Salary-Report-Generator-/
+salary-creator/
 ├── src/
 │   ├── components/ui/            # shadcn components
 │   ├── hooks/                    # use-mobile
@@ -80,9 +79,9 @@ Salary-Report-Generator-/
 │   │   ├── attendance.ts         # daily rate, date helpers, currency, month range
 │   │   ├── attendance.functions.ts  # server fns → Neon reads/writes (records + settings)
 │   │   ├── db.server.ts          # server-only Neon connection helper
-│   │   ├── sync.functions.ts     # server fn → Google Sheets sync
+│   │   ├── sync.functions.ts     # server fn → Google Sheets sync (Service Account)
 │   │   ├── config.server.ts      # server-only config
-│   │   └── api/                  # example server functions
+│   │   └── error-capture.ts      # error boundary helper
 │   ├── routes/
 │   │   ├── __root.tsx
 │   │   ├── index.tsx             # main dashboard (calendar + stats + settings)
@@ -93,7 +92,7 @@ Salary-Report-Generator-/
 │   └── start.ts
 ├── db/
 │   └── schema.sql                # full Neon/Postgres schema (run once on a fresh DB)
-├── .lovable/plan.md              # original product plan
+├── .env.example                  # copy to .env and fill in your values
 ├── CODE_OF_CONDUCT.md
 ├── LICENSE
 └── package.json
@@ -123,7 +122,7 @@ Run `db/schema.sql` once against a fresh Neon database to create everything belo
 | `daily_rate` | INTEGER | Default **1600** |
 | `updated_at` | TIMESTAMPTZ | |
 
-Single-user design: all reads/writes go through server functions (`src/lib/attendance.functions.ts`), never straight from the browser, so there's no need for Postgres-level row security here.
+Single-user design: all reads/writes go through server functions, never straight from the browser.
 
 ---
 
@@ -141,15 +140,15 @@ Single-user design: all reads/writes go through server functions (`src/lib/atten
 ### Prerequisites
 - Node.js 18+
 - A [Neon](https://neon.tech) Postgres project (free tier works)
-- Optional: Lovable Google Sheets connector keys for sync
+- A Google Cloud Service Account with Sheets API access (for sync)
 
 ### Install & run
 
 ```bash
-git clone https://github.com/0utLawzz/Salary-Report-Generator-.git
-cd Salary-Report-Generator-
+git clone https://github.com/0utLawzz/salary-creator.git
+cd salary-creator
 npm install
-cp .env.example .env   # fill in DATABASE_URL (see below)
+cp .env.example .env   # fill in DATABASE_URL and Google credentials
 psql "$DATABASE_URL" -f db/schema.sql   # create tables on a fresh Neon DB
 npm run dev
 ```
@@ -159,69 +158,72 @@ npm run dev
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Vite / TanStack Start dev server |
-| `npm run build` | Production build (targets Vercel by default — see `vite.config.ts`) |
+| `npm run build` | Production build (targets Vercel by default) |
 | `npm run preview` | Preview production build |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |
 
 ### Environment
 
-Required (server-only — see `.env.example`):
+Copy `.env.example` to `.env` and fill in:
 
 ```env
-DATABASE_URL=postgresql://user:password@ep-example.region.aws.neon.tech/neondb?sslmode=require
+# Neon Postgres
+DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+
+# Google Sheets sync (Service Account)
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your-sa@your-project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
 ```
 
-For Google Sheets sync (server-only, optional):
-
-```env
-LOVABLE_API_KEY=...
-GOOGLE_SHEETS_API_KEY=...
-```
-
----
-
-## Deploying to Vercel
-
-1. Push this repo to GitHub (already done if you're reading this from there).
-2. In Vercel, **New Project → Import** this repo.
-3. Add the `DATABASE_URL` environment variable (and the two Sheets-sync keys if you use that feature) in **Project Settings → Environment Variables**.
-4. Deploy. `vite.config.ts` sets the Nitro build preset to `"vercel"`, so no extra build config is needed.
+> **Never commit `.env`** — it is listed in `.gitignore`.
 
 ---
 
 ## Google Sheets sync
 
-1. Open **Settings** on the dashboard.
+The sync uses a **Google Service Account** with direct Sheets API v4 calls (no third-party gateway).
+
+### One-time setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services → Enable APIs** → enable **Google Sheets API**.
+2. **IAM & Admin → Service Accounts** → Create a new service account.
+3. Create a **JSON key** for that account → download the file.
+4. From the JSON file, copy:
+   - `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `private_key` → `GOOGLE_PRIVATE_KEY` (keep the `\n` newlines)
+5. Open your Google Spreadsheet → **Share** → add the service account email with **Editor** access.
+
+### Using sync on the dashboard
+
+1. Open **Config Panel** (gear icon).
 2. Paste the **Spreadsheet ID** (from the sheet URL: `.../d/SPREADSHEET_ID/edit`).
-3. Set the **tab name** (default `Attendance`).
-4. Click **Sync**.
+3. Set the **tab prefix** (default `Attendance`; each month gets its own tab, e.g. `Attendance 2026-08`).
+4. Click **Push** to export app data → sheet, or **Pull** to import sheet data → app.
 
-The server function:
-- Ensures the tab exists (creates it if missing)
-- Clears the sheet
-- Writes rows in **RAW** mode with formula-injection protection
-
-**Columns written:**  
+**Columns written:**
 `Date | Day | Status | Amount (Rs) | Advance (Rs) | Net (Rs)`
 
 ---
 
 ## Print report
 
-- From the dashboard: **Print** → opens `/print?month=YYYY-MM`
+- From the dashboard: **Generate PDF** → opens `/print?month=YYYY-MM`
 - Columns: Date, Day, Status, Amount, Advance, Net
 - Footer totals + employee / authorized signature lines
 - Uses `window.print()` and print CSS
 
 ---
 
-## Security warning
+## Deploying to Vercel
 
-> ⚠️ **A `.env` file is currently committed in this repository.**  
-> Treat any keys in it as compromised: **rotate secrets**, remove `.env` from git history if it contained real credentials, and add `.env` to `.gitignore` (it is not listed there today).
-
-Do not commit secrets. Use local `.env` / deployment secrets only.
+1. Push this repo to GitHub.
+2. In Vercel: **New Project → Import** this repo.
+3. Add environment variables in **Project Settings → Environment Variables**:
+   - `DATABASE_URL`
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `GOOGLE_PRIVATE_KEY` (paste the full PEM key — Vercel preserves newlines)
+4. Deploy. The Nitro preset is `"vercel"` (set in `vite.config.ts`).
 
 ---
 
@@ -233,15 +235,14 @@ Do not commit secrets. Use local `.env` / deployment secrets only.
 - Configurable daily rate
 - Month navigation & stats (working days, present, absent, earnings, net)
 - Printable monthly report
-- Google Sheets sync via server function
-- Supabase persistence (`attendance_records`, `app_settings`)
+- Google Sheets bi-directional sync (push & pull) via Service Account
+- Neon Postgres persistence (`attendance_records`, `app_settings`)
 
 **Possible next steps**
-- Auth / multi-user (RLS is open today)
+- Auth / multi-user support
 - Half-days, paid leave, custom holidays
 - Multiple employees
 - PDF export in addition to browser print
-- Remove committed `.env` and harden secrets handling
 
 ---
 
@@ -260,7 +261,7 @@ Custom Automation Specialist
 
 📧 Contact: [net2outlawzz@gmail.com](mailto:net2outlawzz@gmail.com)  
 🔗 GitHub: [0utLawzz](https://github.com/0utLawzz)  
-📦 Repo: [0utLawzz/Salary-Report-Generator-](https://github.com/0utLawzz/Salary-Report-Generator-)
+📦 Repo: [0utLawzz/salary-creator](https://github.com/0utLawzz/salary-creator)  
 
 ---
 
