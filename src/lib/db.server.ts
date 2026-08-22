@@ -1,9 +1,14 @@
-import { neon } from "@neondatabase/serverless";
+import { createClient } from "@supabase/supabase-js";
 
-// This module is server-only — never imported by client bundles.
-// DATABASE_URL must be set in the environment.
+// Server-only Supabase admin client. This module is never imported by client bundles.
+// Reads/writes happen with service_role privileges so the single-user app does not require auth.
 export function getDb() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not set");
-  return neon(url);
+  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  }
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
