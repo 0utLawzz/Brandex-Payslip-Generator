@@ -95,12 +95,13 @@ export const pushMonthToSheet = createServerFn({ method: "POST" })
 
 /** Pull (sheet -> app) one month's tab. Returns raw rows; caller maps them. */
 export const pullMonthFromSheet = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     z.object({
       spreadsheetId: spreadsheetIdSchema,
       tabName: sheetTitleSchema,
     }),
   )
+
   .handler(async ({ data }) => {
     const { spreadsheetId, tabName } = data;
     const meta = (await (
