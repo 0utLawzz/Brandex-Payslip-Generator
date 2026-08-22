@@ -1,125 +1,79 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { JWT } from "google-auth-library";
 
 // ---------------------------------------------------------------------------
 // Google Sheets API v4 — direct integration via Service Account JWT auth.
-// Env vars required (server-only, never shipped to the browser):
-//   GOOGLE_SERVICE_ACCOUNT_EMAIL  — the service account email
-//   GOOGLE_PRIVATE_KEY            — the PEM private key (replace \n literals)
+// Env vars supported (server-only):
+//   GOOGLE_SERVICE_ACCOUNT_EMAIL  — service account email
+//   GOOGLE_PRIVATE_KEY            — PEM private key (or full JSON key string)
+//   GOOGLE_SERVICE_ACCOUNT_JSON   — full JSON key string (optional alternative)
 // ---------------------------------------------------------------------------
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 
-const DAY_NAMES_FULL = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+function parseCredentials() {
+  let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let key =
+    process.env.GOOGLE_PRIVATE_KEY ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_CREDENTIALS;
 
-// --- JWT / OAuth2 helpers (no external deps, runs on Edge / Node alike) ----
+  if (key && key.trim().startsWith("{")) {
+    try {
+      const json = JSON.parse(key.trim());
+      if (json.client_email) email = json.client_email;
+      if (json.private_key) key = json.private_key;
+    } catch (_) {}
+  }
 
-/** Base64-URL encode a Uint8Array. */
-function b64url(buf: Uint8Array): string {
-  let b = "";
-  buf.forEach((x) => (b += String.fromCharCode(x)));
-  return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  if (email && email.trim().startsWith("{")) {
+    try {
+      const json = JSON.parse(email.trim());
+      if (json.client_email) email = json.client_email;
+      if (json.private_key) key = json.private_key;
+    } catch (_) {}
+  }
+
+  if (key) {
+    key = key.replace(/\\n/g, "\n");
+    if (
+      (key.startsWith('"') && key.endsWith('"')) ||
+      (key.startsWith("'") && key.endsWith("'"))
+    ) {
+      key = key.slice(1, -1);
+    }
+  }
+
+  return { email: email?.trim(), key: key?.trim() };
 }
 
-/** Encode an object as a Base64-URL JSON string. */
-function encodeB64Json(obj: unknown): string {
-  const json = JSON.stringify(obj);
-  const bytes = new TextEncoder().encode(json);
-  return b64url(bytes);
-}
-
-/**
- * Create a signed JWT for a Google Service Account and exchange it for an
- * access token using the Google OAuth2 token endpoint.
- */
 async function getAccessToken(): Promise<string> {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const rawKey = process.env.GOOGLE_PRIVATE_KEY;
+  const { email, key } = parseCredentials();
 
-  if (!email || !rawKey) {
+  if (!email || !key) {
     throw new Error(
       "Google Sheets sync not configured. " +
-        "Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in your environment."
+        "Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY (or GOOGLE_SERVICE_ACCOUNT_JSON) in environment variables."
     );
   }
 
-  // Clean up private key if user passed entire JSON or extra quotes
-  let cleanedKey = rawKey.trim();
-  if (cleanedKey.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(cleanedKey);
-      if (parsed.private_key) cleanedKey = parsed.private_key;
-    } catch (_) {}
+  try {
+    const client = new JWT({
+      email,
+      key,
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+
+    const res = await client.authorize();
+    if (!res.access_token) {
+      throw new Error("No access token returned from Google authorization.");
+    }
+    return res.access_token;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to obtain Google access token: ${msg}`);
   }
-  if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) || (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
-    cleanedKey = cleanedKey.slice(1, -1);
-  }
-
-  // Cloud platforms (Vercel) store the key with literal \n in the env string.
-  const pemKey = cleanedKey.replace(/\\n/g, "\n");
-
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeB64Json({ alg: "RS256", typ: "JWT" });
-  const claim = encodeB64Json({
-    iss: email,
-    scope: "https://www.googleapis.com/auth/spreadsheets",
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now,
-    exp: now + 3600,
-  });
-
-  const signingInput = `${header}.${claim}`;
-
-  // Strip PEM headers/footers and keep only base64 chars
-  const pemBody = pemKey
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/[^A-Za-z0-9+/=]/g, "");
-
-  // Use Buffer for base64 decoding (reliable on Node/Vercel serverless)
-  const derBytes = Uint8Array.from(Buffer.from(pemBody, "base64"));
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    derBytes.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-
-  const sigBuf = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(signingInput)
-  );
-
-  const jwt = `${signingInput}.${b64url(new Uint8Array(sigBuf))}`;
-
-  // Exchange JWT for access token
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-
-  if (!tokenRes.ok) {
-    const text = await tokenRes.text();
-    throw new Error(`Failed to obtain Google access token: ${text}`);
-  }
-
-  const json = (await tokenRes.json()) as { access_token: string };
-  return json.access_token;
 }
 
 // --- Schema validation -------------------------------------------------------
