@@ -33,13 +33,10 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
   .validator(z.object({ start: z.string(), end: z.string() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const { data: rows, error } = await db
-      .from("attendance_records")
-      .select("id, date, status, amount, advance, updated_at")
-      .gte("date", data.start)
-      .lte("date", data.end)
-      .order("date", { ascending: true });
-    if (error) throw error;
+    const rows = await db(
+      "SELECT id, date, status, amount, advance, updated_at FROM attendance_records WHERE date >= $1 AND date <= $2 ORDER BY date ASC",
+      [data.start, data.end]
+    );
     return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
   });
 
@@ -48,11 +45,9 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
 // ---------------------------------------------------------------------
 export const getAllAttendance = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
-  const { data: rows, error } = await db
-    .from("attendance_records")
-    .select("id, date, status, amount, advance, updated_at")
-    .order("date", { ascending: true });
-  if (error) throw error;
+  const rows = await db(
+    "SELECT id, date, status, amount, advance, updated_at FROM attendance_records ORDER BY date ASC"
+  );
   return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
 });
 
@@ -70,19 +65,17 @@ export const upsertAttendanceDay = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    const { data: rows, error } = await db
-      .from("attendance_records")
-      .upsert(
-        {
-          date: data.date,
-          status: data.status,
-          amount: data.amount,
-          advance: data.advance,
-        },
-        { onConflict: "date" }
-      )
-      .select("id, date, status, amount, advance, updated_at");
-    if (error) throw error;
+    const rows = await db(
+      `INSERT INTO attendance_records (date, status, amount, advance)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (date) DO UPDATE SET
+         status = EXCLUDED.status,
+         amount = EXCLUDED.amount,
+         advance = EXCLUDED.advance,
+         updated_at = now()
+       RETURNING id, date, status, amount, advance, updated_at`,
+      [data.date, data.status, data.amount, data.advance]
+    );
     if (!rows || rows.length === 0) throw new Error("Upsert returned no row");
     return mapRow(rows[0] as Record<string, unknown>);
   });
@@ -94,8 +87,7 @@ export const deleteAttendanceDay = createServerFn({ method: "POST" })
   .validator(z.object({ date: z.string() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const { error } = await db.from("attendance_records").delete().eq("date", data.date);
-    if (error) throw error;
+    await db("DELETE FROM attendance_records WHERE date = $1", [data.date]);
     return { ok: true };
   });
 
@@ -111,12 +103,9 @@ export type SettingsRow = z.infer<typeof SettingsSchema>;
 
 export const getSettings = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
-  const { data: rows, error } = await db
-    .from("app_settings")
-    .select("spreadsheet_id, sheet_name, daily_rate")
-    .eq("id", 1)
-    .limit(1);
-  if (error) throw error;
+  const rows = await db(
+    "SELECT spreadsheet_id, sheet_name, daily_rate FROM app_settings WHERE id = 1 LIMIT 1"
+  );
   if (!rows || rows.length === 0) {
     return { spreadsheet_id: null, sheet_name: "Attendance", daily_rate: DAILY_RATE_DEFAULT } as SettingsRow;
   }
@@ -138,18 +127,16 @@ export const updateSettings = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    const { error } = await db
-      .from("app_settings")
-      .upsert(
-        {
-          id: 1,
-          spreadsheet_id: data.spreadsheet_id,
-          sheet_name: data.sheet_name,
-          daily_rate: data.daily_rate,
-        },
-        { onConflict: "id" }
-      );
-    if (error) throw error;
+    await db(
+      `INSERT INTO app_settings (id, spreadsheet_id, sheet_name, daily_rate)
+       VALUES (1, $1, $2, $3)
+       ON CONFLICT (id) DO UPDATE SET
+         spreadsheet_id = EXCLUDED.spreadsheet_id,
+         sheet_name = EXCLUDED.sheet_name,
+         daily_rate = EXCLUDED.daily_rate,
+         updated_at = now()`,
+      [data.spreadsheet_id, data.sheet_name, data.daily_rate]
+    );
     return { ok: true };
   });
 
@@ -175,17 +162,25 @@ export const bulkUpsertAttendanceFromSheet = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = getDb();
     if (data.deletions.length > 0) {
-      const { error } = await db
-        .from("attendance_records")
-        .delete()
-        .in("date", data.deletions)
-        .gte("date", data.start)
-        .lte("date", data.end);
-      if (error) throw error;
+      await db(
+        `DELETE FROM attendance_records WHERE date >= $1 AND date <= $2 AND date = ANY($3::date[])`,
+        [data.start, data.end, data.deletions]
+      );
     }
+    
     if (data.rows.length > 0) {
-      const { error } = await db.from("attendance_records").upsert(data.rows, { onConflict: "date" });
-      if (error) throw error;
+      await Promise.all(data.rows.map(r => 
+        db(
+          `INSERT INTO attendance_records (date, status, amount, advance)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (date) DO UPDATE SET
+             status = EXCLUDED.status,
+             amount = EXCLUDED.amount,
+             advance = EXCLUDED.advance,
+             updated_at = now()`,
+          [r.date, r.status, r.amount, r.advance]
+        )
+      ));
     }
     return { upserted: data.rows.length, deleted: data.deletions.length };
   });
