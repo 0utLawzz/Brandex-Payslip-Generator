@@ -50,9 +50,10 @@ function PrintPage() {
         fetchRange({ data: { start, end } }),
         fetchSettings(),
       ]);
-      const map: Record<string, { status: string; amount: number; advance: number }> = {};
-      recs.forEach((r) => (map[r.date] = { status: r.status, amount: r.amount, advance: r.advance ?? 0 }));
+      const map: Record<string, AttendanceRecord> = {};
+      recs.forEach((r: AttendanceRecord) => (map[r.date] = { status: r.status, amount: r.amount, advance: r.advance ?? 0 }));
       setRecords(map);
+
       if (sett.daily_rate) setRate(sett.daily_rate);
     })();
   }, [start, end]);
