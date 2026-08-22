@@ -39,7 +39,9 @@ function PrintPage() {
   })();
 
   const { start, end, days } = monthRange(year, monthIdx);
-  const [records, setRecords] = useState<Record<string, { status: string; amount: number; advance: number }>>({});
+  type PrintRecord = { status: string; amount: number; advance: number };
+  const [records, setRecords] = useState<Record<string, PrintRecord>>({});
+
   const [rate, setRate] = useState(DAILY_RATE_DEFAULT);
   const fetchRange = useServerFn(getAttendanceRange);
   const fetchSettings = useServerFn(getSettings);
