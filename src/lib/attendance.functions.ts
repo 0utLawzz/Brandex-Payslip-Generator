@@ -32,27 +32,28 @@ function mapRow(row: Record<string, unknown>): AttendanceRecordRow {
 export const getAttendanceRange = createServerFn({ method: "GET" })
   .validator(z.object({ start: z.string(), end: z.string() }))
   .handler(async ({ data }) => {
-    const sql = getDb();
-    const rows = await sql`
-      SELECT id, date, status, amount, advance, updated_at
-      FROM public.attendance_records
-      WHERE date >= ${data.start}::date AND date <= ${data.end}::date
-      ORDER BY date ASC
-    `;
-    return rows.map(mapRow);
+    const db = getDb();
+    const { data: rows, error } = await db
+      .from("attendance_records")
+      .select("id, date, status, amount, advance, updated_at")
+      .gte("date", data.start)
+      .lte("date", data.end)
+      .order("date", { ascending: true });
+    if (error) throw error;
+    return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
   });
 
 // ---------------------------------------------------------------------
 // getAllAttendance — every record, ordered by date.
 // ---------------------------------------------------------------------
 export const getAllAttendance = createServerFn({ method: "GET" }).handler(async () => {
-  const sql = getDb();
-  const rows = await sql`
-    SELECT id, date, status, amount, advance, updated_at
-    FROM public.attendance_records
-    ORDER BY date ASC
-  `;
-  return rows.map(mapRow);
+  const db = getDb();
+  const { data: rows, error } = await db
+    .from("attendance_records")
+    .select("id, date, status, amount, advance, updated_at")
+    .order("date", { ascending: true });
+  if (error) throw error;
+  return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
 });
 
 // ---------------------------------------------------------------------
@@ -68,17 +69,21 @@ export const upsertAttendanceDay = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const sql = getDb();
-    const rows = await sql`
-      INSERT INTO public.attendance_records (date, status, amount, advance)
-      VALUES (${data.date}::date, ${data.status}, ${data.amount}, ${data.advance})
-      ON CONFLICT (date) DO UPDATE SET
-        status     = EXCLUDED.status,
-        amount     = EXCLUDED.amount,
-        advance    = EXCLUDED.advance,
-        updated_at = now()
-      RETURNING id, date, status, amount, advance, updated_at
-    `;
+    const db = getDb();
+    const { data: rows, error } = await db
+      .from("attendance_records")
+      .upsert(
+        {
+          date: data.date,
+          status: data.status,
+          amount: data.amount,
+          advance: data.advance,
+        },
+        { onConflict: "date" }
+      )
+      .select("id, date, status, amount, advance, updated_at");
+    if (error) throw error;
+    if (!rows || rows.length === 0) throw new Error("Upsert returned no row");
     return mapRow(rows[0] as Record<string, unknown>);
   });
 
@@ -88,8 +93,9 @@ export const upsertAttendanceDay = createServerFn({ method: "POST" })
 export const deleteAttendanceDay = createServerFn({ method: "POST" })
   .validator(z.object({ date: z.string() }))
   .handler(async ({ data }) => {
-    const sql = getDb();
-    await sql`DELETE FROM public.attendance_records WHERE date = ${data.date}::date`;
+    const db = getDb();
+    const { error } = await db.from("attendance_records").delete().eq("date", data.date);
+    if (error) throw error;
     return { ok: true };
   });
 
@@ -104,14 +110,14 @@ const SettingsSchema = z.object({
 export type SettingsRow = z.infer<typeof SettingsSchema>;
 
 export const getSettings = createServerFn({ method: "GET" }).handler(async () => {
-  const sql = getDb();
-  const rows = await sql`
-    SELECT spreadsheet_id, sheet_name, daily_rate
-    FROM public.app_settings
-    WHERE id = 1
-    LIMIT 1
-  `;
-  if (!rows.length) {
+  const db = getDb();
+  const { data: rows, error } = await db
+    .from("app_settings")
+    .select("spreadsheet_id, sheet_name, daily_rate")
+    .eq("id", 1)
+    .limit(1);
+  if (error) throw error;
+  if (!rows || rows.length === 0) {
     return { spreadsheet_id: null, sheet_name: "Attendance", daily_rate: DAILY_RATE_DEFAULT } as SettingsRow;
   }
   const r = rows[0] as Record<string, unknown>;
@@ -131,15 +137,55 @@ export const updateSettings = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const sql = getDb();
-    await sql`
-      INSERT INTO public.app_settings (id, spreadsheet_id, sheet_name, daily_rate)
-      VALUES (1, ${data.spreadsheet_id}, ${data.sheet_name}, ${data.daily_rate})
-      ON CONFLICT (id) DO UPDATE SET
-        spreadsheet_id = EXCLUDED.spreadsheet_id,
-        sheet_name     = EXCLUDED.sheet_name,
-        daily_rate     = EXCLUDED.daily_rate,
-        updated_at     = now()
-    `;
+    const db = getDb();
+    const { error } = await db
+      .from("app_settings")
+      .upsert(
+        {
+          id: 1,
+          spreadsheet_id: data.spreadsheet_id,
+          sheet_name: data.sheet_name,
+          daily_rate: data.daily_rate,
+        },
+        { onConflict: "id" }
+      );
+    if (error) throw error;
     return { ok: true };
+  });
+
+// ---------------------------------------------------------------------
+// bulkUpsertAttendanceFromSheet — apply a pulled sheet month to the DB
+// ---------------------------------------------------------------------
+export const bulkUpsertAttendanceFromSheet = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      start: z.string(),
+      end: z.string(),
+      rows: z.array(
+        z.object({
+          date: z.string(),
+          status: z.enum(["present", "absent"]),
+          amount: z.number().int().min(0),
+          advance: z.number().int().min(0),
+        })
+      ),
+      deletions: z.array(z.string()),
+    })
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    if (data.deletions.length > 0) {
+      const { error } = await db
+        .from("attendance_records")
+        .delete()
+        .in("date", data.deletions)
+        .gte("date", data.start)
+        .lte("date", data.end);
+      if (error) throw error;
+    }
+    if (data.rows.length > 0) {
+      const { error } = await db.from("attendance_records").upsert(data.rows, { onConflict: "date" });
+      if (error) throw error;
+    }
+    return { upserted: data.rows.length, deleted: data.deletions.length };
   });
