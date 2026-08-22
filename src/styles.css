@@ -13,12 +13,23 @@
  * The :root and .dark blocks define the actual color values using oklch.
  * All colors MUST use oklch format.
  *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ * Accent: calm sage-teal (#3d8b7a region) — sober, professional, breathing.
  */
 
 @theme inline {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", "Space Grotesk", sans-serif;
+  --color-brutal-yellow: #ffde03;
+  --color-brutal-pink: #ff90e8;
+  --color-brutal-teal: #23a094;
+  --color-brutal-red: #ff6b6b;
+  --color-brutal-purple: #8c52ff;
+  --color-brutal-green: #00ff94;
+  --color-brutal-bg: #f0f0f0;
+  /* Calm accent — muted sage-teal */
+  --color-calm: var(--calm);
+  --color-calm-foreground: var(--calm-foreground);
+  --color-calm-muted: var(--calm-muted);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -63,7 +74,11 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  /* Calm accent: sage-teal — sober, warm, professional */
+  --calm: oklch(0.55 0.09 175);
+  --calm-foreground: oklch(0.98 0.005 175);
+  --calm-muted: oklch(0.93 0.025 175);
+  --background: oklch(0.99 0.002 200);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
@@ -81,7 +96,7 @@
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
+  --ring: oklch(0.55 0.09 175);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -98,6 +113,9 @@
 }
 
 .dark {
+  --calm: oklch(0.62 0.09 175);
+  --calm-foreground: oklch(0.98 0.005 175);
+  --calm-muted: oklch(0.25 0.04 175);
   --background: oklch(0.129 0.042 264.695);
   --foreground: oklch(0.984 0.003 247.858);
   --card: oklch(0.208 0.042 265.755);
@@ -116,7 +134,7 @@
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
+  --ring: oklch(0.62 0.09 175);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -140,5 +158,19 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
   }
+}
+
+@utility shadow-brutal {
+  box-shadow: 8px 8px 0 0 #000;
+}
+@utility shadow-brutal-sm {
+  box-shadow: 4px 4px 0 0 #000;
+}
+@utility shadow-brutal-lg {
+  box-shadow: 12px 12px 0 0 #000;
+}
+@utility shadow-calm {
+  box-shadow: 4px 4px 0 0 oklch(0.55 0.09 175 / 30%);
 }
