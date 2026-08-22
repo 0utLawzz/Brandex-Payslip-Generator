@@ -14,11 +14,20 @@ const AttendanceRecordSchema = z.object({
 });
 export type AttendanceRecordRow = z.infer<typeof AttendanceRecordSchema>;
 
-// Map raw DB row to AttendanceRecordRow
+// Safely map raw DB row to AttendanceRecordRow in YYYY-MM-DD format
 function mapRow(row: Record<string, unknown>): AttendanceRecordRow {
+  let dateStr = "";
+  if (row.date instanceof Date) {
+    const y = row.date.getUTCFullYear();
+    const m = String(row.date.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(row.date.getUTCDate()).padStart(2, "0");
+    dateStr = `${y}-${m}-${d}`;
+  } else {
+    dateStr = String(row.date ?? "").slice(0, 10);
+  }
   return {
     id: String(row.id),
-    date: String(row.date).slice(0, 10), // YYYY-MM-DD
+    date: dateStr, // YYYY-MM-DD
     status: row.status as "present" | "absent",
     amount: Number(row.amount),
     advance: Number(row.advance),
@@ -34,7 +43,7 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const db = getDb();
     const rows = await db.query(
-      "SELECT id, date, status, amount, advance, updated_at FROM attendance_records WHERE date >= $1 AND date <= $2 ORDER BY date ASC",
+      "SELECT id, date::text AS date, status, amount, advance, updated_at FROM attendance_records WHERE date >= $1 AND date <= $2 ORDER BY date ASC",
       [data.start, data.end]
     );
     return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
@@ -46,7 +55,7 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
 export const getAllAttendance = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
   const rows = await db.query(
-    "SELECT id, date, status, amount, advance, updated_at FROM attendance_records ORDER BY date ASC"
+    "SELECT id, date::text AS date, status, amount, advance, updated_at FROM attendance_records ORDER BY date ASC"
   );
   return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
 });
@@ -73,7 +82,7 @@ export const upsertAttendanceDay = createServerFn({ method: "POST" })
          amount = EXCLUDED.amount,
          advance = EXCLUDED.advance,
          updated_at = now()
-       RETURNING id, date, status, amount, advance, updated_at`,
+       RETURNING id, date::text AS date, status, amount, advance, updated_at`,
       [data.date, data.status, data.amount, data.advance]
     );
     if (!rows || rows.length === 0) throw new Error("Upsert returned no row");

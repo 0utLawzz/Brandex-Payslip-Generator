@@ -274,15 +274,24 @@ function Dashboard() {
         const date = (row[0] ?? "").trim();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
         if (date < start || date > end) continue;
-        const status = (row[2] ?? "").trim().toLowerCase();
+        const statusRaw = (row[2] ?? "").trim().toLowerCase();
         const advance = Math.max(0, Math.round(Number(row[4]) || 0));
-        if (status !== "present" && status !== "absent") {
+        let effective: "present" | "absent" | null = null;
+        if (statusRaw.includes("present") || statusRaw === "pr" || statusRaw === "p") {
+          effective = "present";
+        } else if (statusRaw.includes("absent") || statusRaw === "ab" || statusRaw === "a") {
+          effective = "absent";
+        }
+
+        if (!effective) {
           if (advance === 0) {
             deletions.push(date);
             continue;
+          } else {
+            effective = "present";
           }
         }
-        const effective = status === "present" ? "present" : "absent";
+
         upserts.push({
           date,
           status: effective,
