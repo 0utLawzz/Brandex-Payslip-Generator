@@ -8,6 +8,7 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
   amount: number;
   advance: number;
+  notes?: string;
 }
 
 export function ymd(d: Date): string {

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
   status TEXT NOT NULL CHECK (status IN ('present', 'absent')),
   amount INTEGER NOT NULL DEFAULT 0,
   advance INTEGER NOT NULL DEFAULT 0,
+  notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -47,3 +48,6 @@ CREATE TRIGGER trg_attendance_updated BEFORE UPDATE ON public.attendance_records
 DROP TRIGGER IF EXISTS trg_settings_updated ON public.app_settings;
 CREATE TRIGGER trg_settings_updated BEFORE UPDATE ON public.app_settings
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- Migration for existing DBs (safe to re-run):
+ALTER TABLE public.attendance_records ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
