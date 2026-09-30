@@ -10,6 +10,7 @@ const AttendanceRecordSchema = z.object({
   status: z.enum(["present", "absent"]),
   amount: z.number(),
   advance: z.number(),
+  notes: z.string().optional(),
   updated_at: z.string(),
 });
 export type AttendanceRecordRow = z.infer<typeof AttendanceRecordSchema>;
@@ -31,6 +32,7 @@ function mapRow(row: Record<string, unknown>): AttendanceRecordRow {
     status: row.status as "present" | "absent",
     amount: Number(row.amount),
     advance: Number(row.advance),
+    notes: row.notes != null ? String(row.notes) : "",
     updated_at: String(row.updated_at),
   };
 }
@@ -43,7 +45,7 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const db = getDb();
     const rows = await db.query(
-      "SELECT id, date::text AS date, status, amount, advance, updated_at FROM attendance_records WHERE date >= $1 AND date <= $2 ORDER BY date ASC",
+      "SELECT id, date::text AS date, status, amount, advance, COALESCE(notes, '') AS notes, updated_at FROM attendance_records WHERE date >= $1 AND date <= $2 ORDER BY date ASC",
       [data.start, data.end]
     );
     return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
@@ -55,13 +57,13 @@ export const getAttendanceRange = createServerFn({ method: "GET" })
 export const getAllAttendance = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
   const rows = await db.query(
-    "SELECT id, date::text AS date, status, amount, advance, updated_at FROM attendance_records ORDER BY date ASC"
+    "SELECT id, date::text AS date, status, amount, advance, COALESCE(notes, '') AS notes, updated_at FROM attendance_records ORDER BY date ASC"
   );
   return (rows ?? []).map((r) => mapRow(r as Record<string, unknown>));
 });
 
 // ---------------------------------------------------------------------
-// upsertAttendanceDay — mark a day present/absent and/or set its advance
+// upsertAttendanceDay — mark a day present/absent and/or set its advance + notes
 // ---------------------------------------------------------------------
 export const upsertAttendanceDay = createServerFn({ method: "POST" })
   .validator(
@@ -70,20 +72,22 @@ export const upsertAttendanceDay = createServerFn({ method: "POST" })
       status: z.enum(["present", "absent"]),
       amount: z.number().int().min(0),
       advance: z.number().int().min(0),
+      notes: z.string().optional().default(""),
     })
   )
   .handler(async ({ data }) => {
     const db = getDb();
     const rows = await db.query(
-      `INSERT INTO attendance_records (date, status, amount, advance)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO attendance_records (date, status, amount, advance, notes)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (date) DO UPDATE SET
          status = EXCLUDED.status,
          amount = EXCLUDED.amount,
          advance = EXCLUDED.advance,
+         notes = EXCLUDED.notes,
          updated_at = now()
-       RETURNING id, date::text AS date, status, amount, advance, updated_at`,
-      [data.date, data.status, data.amount, data.advance]
+       RETURNING id, date::text AS date, status, amount, advance, COALESCE(notes, '') AS notes, updated_at`,
+      [data.date, data.status, data.amount, data.advance, data.notes ?? ""]
     );
     if (!rows || rows.length === 0) throw new Error("Upsert returned no row");
     return mapRow(rows[0] as Record<string, unknown>);
@@ -163,6 +167,7 @@ export const bulkUpsertAttendanceFromSheet = createServerFn({ method: "POST" })
           status: z.enum(["present", "absent"]),
           amount: z.number().int().min(0),
           advance: z.number().int().min(0),
+          notes: z.string().optional().default(""),
         })
       ),
       deletions: z.array(z.string()),
@@ -181,14 +186,15 @@ export const bulkUpsertAttendanceFromSheet = createServerFn({ method: "POST" })
       await Promise.all(
         data.rows.map((r) =>
           db.query(
-            `INSERT INTO attendance_records (date, status, amount, advance)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO attendance_records (date, status, amount, advance, notes)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (date) DO UPDATE SET
                status = EXCLUDED.status,
                amount = EXCLUDED.amount,
                advance = EXCLUDED.advance,
+               notes = EXCLUDED.notes,
                updated_at = now()`,
-            [r.date, r.status, r.amount, r.advance]
+            [r.date, r.status, r.amount, r.advance, r.notes ?? ""]
           )
         )
       );
