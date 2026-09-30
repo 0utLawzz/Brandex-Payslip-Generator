@@ -10,6 +10,14 @@ import {
   type AttendanceStatus,
 } from "@/lib/attendance";
 
+function formatAdvanceShort(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000;
+    return k % 1 === 0 ? `${k}k` : `${k.toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  return String(n);
+}
+
 export function DayCell({
   date,
   record,
@@ -45,18 +53,21 @@ export function DayCell({
 
   const presentStyle = record?.status === "present" ? { background: "oklch(0.42 0.09 175)", color: "white" } : {};
   const todayRingClass = isToday && !sunday ? "ring-1 ring-offset-1" : "";
-  const todayRingStyle = isToday && !sunday ? { ringColor: "oklch(0.55 0.09 175)", outline: "1.5px solid oklch(0.55 0.09 175)", outlineOffset: "2px" } : {};
+  const todayRingStyle =
+    isToday && !sunday
+      ? { ringColor: "oklch(0.55 0.09 175)", outline: "1.5px solid oklch(0.55 0.09 175)", outlineOffset: "2px" }
+      : {};
 
   const cellClass = [
-    "relative flex aspect-square flex-col items-start justify-between p-1 sm:p-2 text-xs border transition-all",
+    "relative flex aspect-square flex-col items-start justify-between p-1 sm:p-1.5 text-xs border transition-all",
     "disabled:cursor-not-allowed",
     sunday
       ? "bg-neutral-50 border-neutral-200 text-neutral-300 font-light"
       : record?.status === "present"
-      ? "border-emerald-800 font-bold"
-      : record?.status === "absent"
-      ? "bg-rose-50/90 border-rose-400 text-rose-950 font-bold"
-      : "bg-white border-neutral-200 text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400",
+        ? "border-emerald-800 font-bold"
+        : record?.status === "absent"
+          ? "bg-rose-50/90 border-rose-400 text-rose-950 font-bold"
+          : "bg-white border-neutral-200 text-neutral-800 hover:bg-neutral-50 hover:border-neutral-400",
     todayRingClass,
   ].join(" ");
 
@@ -76,30 +87,48 @@ export function DayCell({
     );
   }
 
+  const hasAdvance = (record?.advance ?? 0) > 0;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button disabled={disabled} className={cellClass} style={{ ...presentStyle, ...todayRingStyle }}>
-          <span className="text-[10px] sm:text-[11px] leading-none">{date.getDate()}</span>
-          {record?.notes ? (
-            <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-amber-400" title="Has note" />
-          ) : null}
-          <div className="flex w-full items-end justify-between">
-            <span className="text-[6px] sm:text-[7px] uppercase tracking-wider opacity-65">
-              {record?.status === "present" ? "PR" : record?.status === "absent" ? "AB" : ""}
-            </span>
-            {record?.status === "present" ? (
-              <Check className="h-2.5 w-2.5" />
-            ) : record?.status === "absent" ? (
-              <span className="text-[8px]">×</span>
+          <div className="flex w-full items-start justify-between gap-0.5">
+            <span className="text-[10px] sm:text-[11px] leading-none">{date.getDate()}</span>
+            {record?.notes ? (
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" title="Has note" />
             ) : null}
           </div>
-          {record?.advance ? (
-            <span className="absolute bottom-0.5 right-0.5 text-[6px] opacity-70">A</span>
-          ) : null}
+
+          <div className="flex w-full flex-col gap-0.5">
+            <div className="flex w-full items-end justify-between">
+              <span className="text-[6px] sm:text-[7px] uppercase tracking-wider opacity-65">
+                {record?.status === "present" ? "PR" : record?.status === "absent" ? "AB" : ""}
+              </span>
+              {record?.status === "present" ? (
+                <Check className="h-2.5 w-2.5" />
+              ) : record?.status === "absent" ? (
+                <span className="text-[8px]">×</span>
+              ) : null}
+            </div>
+            {hasAdvance ? (
+              <div
+                className={
+                  "w-full truncate text-left text-[7px] sm:text-[8px] font-bold tabular-nums leading-none " +
+                  (record?.status === "present" ? "text-white/90" : "text-amber-700")
+                }
+                title={`Advance: Rs ${record!.advance.toLocaleString("en-PK")}`}
+              >
+                −{formatAdvanceShort(record!.advance)}
+              </div>
+            ) : null}
+          </div>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(18rem,calc(100vw-1.5rem))] pointer-events-auto border border-neutral-300 shadow-sm rounded-none font-mono" align="center">
+      <PopoverContent
+        className="w-[min(18rem,calc(100vw-1.5rem))] pointer-events-auto border border-neutral-300 shadow-sm rounded-none font-mono"
+        align="center"
+      >
         <div className="space-y-2.5">
           <div className="text-[9px] font-bold uppercase tracking-wider text-neutral-400">
             {date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
@@ -111,7 +140,11 @@ export function DayCell({
                 "border py-1 text-[9px] font-bold uppercase transition-colors " +
                 (record?.status === "present" ? "text-white" : "bg-white hover:bg-neutral-50 border-neutral-300")
               }
-              style={record?.status === "present" ? { background: "oklch(0.42 0.09 175)", borderColor: "oklch(0.42 0.09 175)" } : {}}
+              style={
+                record?.status === "present"
+                  ? { background: "oklch(0.42 0.09 175)", borderColor: "oklch(0.42 0.09 175)" }
+                  : {}
+              }
             >
               PRESENT
             </button>
@@ -119,7 +152,9 @@ export function DayCell({
               onClick={() => pickStatus("absent")}
               className={
                 "border py-1 text-[9px] font-bold uppercase transition-colors " +
-                (record?.status === "absent" ? "bg-rose-600 text-white border-rose-600" : "bg-white hover:bg-neutral-50 border-neutral-300 text-rose-950")
+                (record?.status === "absent"
+                  ? "bg-rose-600 text-white border-rose-600"
+                  : "bg-white hover:bg-neutral-50 border-neutral-300 text-rose-950")
               }
             >
               ABSENT

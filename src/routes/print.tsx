@@ -112,71 +112,100 @@ function PrintPage() {
           </Button>
         </div>
 
-        <header className="mb-3 border-b border-black pb-2">
-          <h1 className="text-xl font-bold leading-tight sm:text-2xl">Brandex Law Services</h1>
-          <h2 className="text-base font-semibold sm:text-lg">Attendance Report</h2>
-          <p className="text-xs text-gray-600 sm:text-sm">
-            {monthLabel} · Daily rate: {formatCurrency(rate)}
-          </p>
+        <header className="mb-4 border-b-2 border-black pb-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h1 className="text-xl font-bold leading-tight sm:text-2xl tracking-tight">
+                Brandex Law Services
+              </h1>
+              <h2 className="text-base font-semibold sm:text-lg text-neutral-800">Attendance Report</h2>
+            </div>
+            <div className="text-right text-xs sm:text-sm text-neutral-600">
+              <div className="font-semibold text-neutral-900">{monthLabel}</div>
+              <div>Daily rate: {formatCurrency(rate)}</div>
+            </div>
+          </div>
         </header>
 
         <table className="print-table w-full border-collapse text-[11px] sm:text-sm">
           <thead>
-            <tr className="border-b-2 border-black text-left">
-              <th className="py-1.5 pr-1.5">Date</th>
+            <tr className="border-b-2 border-black text-left bg-neutral-100">
+              <th className="py-1.5 pr-1.5 pl-1">Date</th>
               <th className="py-1.5 pr-1.5">Day</th>
               <th className="py-1.5 pr-1.5">Status</th>
               <th className="py-1.5 pr-1.5 text-right">Amount</th>
               <th className="py-1.5 pr-1.5 text-right">Advance</th>
               <th className="py-1.5 pr-1.5 text-right">Net</th>
-              <th className="py-1.5 pr-0">Notes</th>
+              <th className="py-1.5 pr-1 pl-1">Notes</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr
-                key={r.date}
-                className={"border-b border-gray-200 " + (r.sun ? "text-gray-500" : "")}
-              >
-                <td className="py-1 pr-1.5 whitespace-nowrap">{r.date}</td>
-                <td className="py-1 pr-1.5 whitespace-nowrap">{r.day}</td>
-                <td className="py-1 pr-1.5">{r.status}</td>
-                <td className="py-1 pr-1.5 text-right whitespace-nowrap">
-                  {r.amount ? formatCurrency(r.amount) : "—"}
-                </td>
-                <td className="py-1 pr-1.5 text-right whitespace-nowrap">
-                  {r.advance ? formatCurrency(r.advance) : "—"}
-                </td>
-                <td className="py-1 pr-1.5 text-right whitespace-nowrap">
-                  {r.amount - r.advance ? formatCurrency(r.amount - r.advance) : "—"}
-                </td>
-                <td className="py-1 pr-0 max-w-[8rem] truncate" title={r.notes || undefined}>
-                  {r.notes || "—"}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const rowClass = r.sun
+                ? "row-sunday border-b border-gray-200 text-gray-500"
+                : r.status === "Present"
+                  ? "row-present border-b border-gray-200"
+                  : r.status === "Absent"
+                    ? "row-absent border-b border-gray-200"
+                    : "border-b border-gray-200";
+              return (
+                <tr key={r.date} className={rowClass}>
+                  <td className="py-1 pr-1.5 pl-1 whitespace-nowrap">{r.date}</td>
+                  <td className="py-1 pr-1.5 whitespace-nowrap">{r.day}</td>
+                  <td className="py-1 pr-1.5">
+                    {r.sun ? (
+                      <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600">
+                        Sunday (off)
+                      </span>
+                    ) : r.status === "Present" ? (
+                      <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                        Present
+                      </span>
+                    ) : r.status === "Absent" ? (
+                      <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-800">
+                        Absent
+                      </span>
+                    ) : (
+                      r.status
+                    )}
+                  </td>
+                  <td className="py-1 pr-1.5 text-right whitespace-nowrap">
+                    {r.amount ? formatCurrency(r.amount) : "—"}
+                  </td>
+                  <td className="py-1 pr-1.5 text-right whitespace-nowrap">
+                    {r.advance ? formatCurrency(r.advance) : "—"}
+                  </td>
+                  <td className="py-1 pr-1.5 text-right whitespace-nowrap font-medium">
+                    {r.amount - r.advance ? formatCurrency(r.amount - r.advance) : "—"}
+                  </td>
+                  <td className="py-1 pr-1 pl-1 max-w-[8rem] truncate" title={r.notes || undefined}>
+                    {r.notes || "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-black font-semibold">
-              <td className="py-1.5 pr-1.5" colSpan={3}>
+            <tr className="border-t-2 border-black font-semibold bg-neutral-50">
+              <td className="py-2 pr-1.5 pl-1" colSpan={3}>
                 Totals
               </td>
-              <td className="py-1.5 pr-1.5 text-right">{formatCurrency(total)}</td>
-              <td className="py-1.5 pr-1.5 text-right">{formatCurrency(totalAdvance)}</td>
-              <td className="py-1.5 pr-1.5 text-right">{formatCurrency(total - totalAdvance)}</td>
-              <td className="py-1.5 pr-0" />
+              <td className="py-2 pr-1.5 text-right">{formatCurrency(total)}</td>
+              <td className="py-2 pr-1.5 text-right">{formatCurrency(totalAdvance)}</td>
+              <td className="py-2 pr-1.5 text-right">{formatCurrency(total - totalAdvance)}</td>
+              <td className="py-2 pr-1" />
             </tr>
           </tfoot>
         </table>
 
         {notesWithContent.length > 0 && (
-          <section className="mt-3 break-inside-avoid">
-            <h3 className="text-xs font-bold uppercase tracking-wide border-b border-gray-300 pb-1 mb-1.5">
+          <section className="mt-4 break-inside-avoid">
+            <h3 className="text-xs font-bold uppercase tracking-wide border-b border-gray-400 pb-1 mb-2">
               Notes detail
             </h3>
-            <ul className="text-[11px] space-y-0.5">
+            <ul className="text-[11px] space-y-1">
               {notesWithContent.map((r) => (
-                <li key={r.date}>
+                <li key={r.date} className="pl-1 border-l-2 border-amber-400">
                   <span className="font-semibold">{r.date}</span>
                   <span className="text-gray-500"> ({r.day}): </span>
                   {r.notes}
@@ -186,24 +215,37 @@ function PrintPage() {
           </section>
         )}
 
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 sm:gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 sm:gap-3">
           <Summary label="Working Days" value={days.length - sundays} />
-          <Summary label="Present" value={present} />
-          <Summary label="Absent" value={absent} />
-          <Summary label="Sundays" value={sundays} />
+          <Summary label="Present" value={present} accent="emerald" />
+          <Summary label="Absent" value={absent} accent="rose" />
+          <Summary label="Sundays" value={sundays} accent="slate" />
         </div>
 
-        <div className="mt-6 flex justify-between border-t border-black pt-8 text-xs text-gray-700 sm:text-sm">
+        <div className="mt-8 flex justify-between border-t-2 border-black pt-10 text-xs text-gray-700 sm:text-sm">
           <div>
-            <div className="border-t border-black pt-1 min-w-[7rem]">Employee Signature</div>
+            <div className="border-t border-black pt-1 min-w-[8rem]">Employee Signature</div>
           </div>
           <div>
-            <div className="border-t border-black pt-1 min-w-[7rem]">Authorized Signature</div>
+            <div className="border-t border-black pt-1 min-w-[8rem]">Authorized Signature</div>
           </div>
         </div>
+
+        <p className="mt-6 text-center text-[9px] text-neutral-400 print:text-neutral-500">
+          Brandex Law Services · Generated {new Date().toLocaleDateString("en-PK")}
+        </p>
       </div>
 
       <style>{`
+        .row-sunday {
+          background: #f1f5f9 !important;
+        }
+        .row-present {
+          background: #ecfdf5 !important;
+        }
+        .row-absent {
+          background: #fff1f2 !important;
+        }
         @media print {
           @page {
             size: A4 portrait;
@@ -245,6 +287,9 @@ function PrintPage() {
             text-overflow: ellipsis;
             white-space: nowrap;
           }
+          .row-sunday { background: #e2e8f0 !important; }
+          .row-present { background: #d1fae5 !important; }
+          .row-absent { background: #ffe4e6 !important; }
           .break-inside-avoid {
             break-inside: avoid;
           }
@@ -259,9 +304,25 @@ function PrintPage() {
   );
 }
 
-function Summary({ label, value }: { label: string; value: number | string }) {
+function Summary({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number | string;
+  accent?: "emerald" | "rose" | "slate";
+}) {
+  const border =
+    accent === "emerald"
+      ? "border-emerald-300 bg-emerald-50"
+      : accent === "rose"
+        ? "border-rose-300 bg-rose-50"
+        : accent === "slate"
+          ? "border-slate-300 bg-slate-50"
+          : "border-gray-300 bg-white";
   return (
-    <div className="rounded border border-gray-300 p-2 sm:p-3">
+    <div className={`rounded border p-2 sm:p-3 ${border}`}>
       <div className="text-[10px] uppercase text-gray-500">{label}</div>
       <div className="text-base font-semibold sm:text-lg">{value}</div>
     </div>
