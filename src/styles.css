@@ -174,3 +174,16 @@
 @utility shadow-calm {
   box-shadow: 4px 4px 0 0 oklch(0.55 0.09 175 / 30%);
 }
+
+/* Responsive safety — fit theme to display */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overflow-x: clip;
+}
+@media (max-width: 640px) {
+  .aspect-square {
+    min-height: 2.25rem;
+  }
+}
